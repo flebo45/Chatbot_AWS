@@ -19,6 +19,9 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 
+# Ignore backend config files (contain bucket names and account-specific values)
+*.hcl
+
 # Ignore CLI configuration files
 .terraformrc
 terraform.rc
