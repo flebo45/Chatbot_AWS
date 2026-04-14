@@ -51,3 +51,9 @@ Thumbs.db
 
 # env file
 .env
+
+# TODO
+todo.txt
+
+# Deploy
+deploy_frontend.sh

@@ -13,8 +13,16 @@ output "dynamodb_table_name" {
   value       = module.dynamodb.table_name
 }
 
+# output URL for frontend assets served via CloudFront
+output "website_url" {
+  value = "https://${module.cloudfront_frontend.domain_name}"
+}
 
-# output "api_gateway_endpoint" {
-#   description = "API Gateway invoke URL endpoint for accessing the chat API"
-#   value       = module.api_gateway.api_endpoint
-# }
+output "cloudfront_distribution_id" {
+  description = "The ID needed for the deploy.sh script"
+  value       = module.cloudfront_frontend.distribution_id
+}
+
+output "api_chat_url" {
+  value = "${module.api_gateway.api_endpoint}/chat"
+}

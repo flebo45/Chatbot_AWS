@@ -1,26 +1,23 @@
-variable "api_name" {
-  description = "Name of the API Gateway"
-  type        = string
+variable "project_name" {
+  type = string
 }
 
-variable "lambda_function_arn" {
-  description = "ARN of the Lambda function to integrate with API Gateway"
+variable "lambda_arn" {
+  description = "The ARN of the Lambda function"
   type        = string
 }
 
 variable "lambda_function_name" {
-  description = "Name of the Lambda function for permission configuration"
+  description = "The name of the Lambda function"
   type        = string
 }
 
-variable "stage_name" {
-  description = "Deployment stage name for the API Gateway"
-  type        = string
-  default     = "prod"
+variable "allowed_origins" {
+  description = "A list of allowed origins for CORS (Your CloudFront URL)"
+  type        = list(string)
 }
 
 variable "tags" {
-  description = "Tags to apply to API Gateway resources"
-  type        = map(string)
-  default     = {}
+  type    = map(string)
+  default = {}
 }
