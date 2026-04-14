@@ -69,4 +69,14 @@ module "api_gateway" {
   tags = local.common_tags
 }
 
+module "github_oidc" {
+  source = "../../modules/oidc_github"
 
+  project_name = local.resource_prefix
+
+  github_org = "flebo45"
+  github_repo = "Chatbot_AWS"
+
+  s3_bucket_arn = module.frontend_bucket.bucket_arn
+  cloudfront_distribution_arn = module.cloudfront_frontend.distribution_arn
+}

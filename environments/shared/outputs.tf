@@ -26,3 +26,7 @@ output "cloudfront_distribution_id" {
 output "api_chat_url" {
   value = "${module.api_gateway.api_endpoint}/chat"
 }
+
+output "github_actions_role_arn" {
+  value = module.github_oidc.github_role_arn
+}
