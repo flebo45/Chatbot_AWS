@@ -60,7 +60,7 @@ resource "aws_iam_role_policy_attachment" "lambda_logs" {
 
 data "archive_file" "zip" {
   type        = "zip"
-  source_file = var.source_file
+  source_dir = var.source_dir
   output_path = "${path.module}/chat_handler.zip"
 }
 
@@ -68,11 +68,18 @@ resource "aws_lambda_function" "this" {
   filename         = data.archive_file.zip.output_path
   function_name    = var.function_name
   role             = aws_iam_role.lambda_role.arn
-  handler          = "chat_handler.lambda_handler"
+  handler          = "index.lambda_handler"
   runtime          = var.runtime
   source_code_hash = data.archive_file.zip.output_base64sha256
 
   timeout = 30
+
+  environment {
+    variables = {
+      TABLE_NAME = var.dynamodb_table_name
+      BEDROCK_MODEL_ID = var.bedrock_model_arn
+    }
+  }
 
   tags = var.tags
 }

@@ -30,7 +30,7 @@ module "chat_lambda" {
   source = "../../modules/chat_lambda"
 
   function_name       = local.lambda_function_name
-  source_file         = "../../modules/chat_lambda/index.py"
+  source_dir         = "../../modules/chat_lambda/src"
   runtime             = var.lambda_runtime
   dynamodb_table_arn  = module.dynamodb.table_arn
   dynamodb_table_name = module.dynamodb.table_name
@@ -39,6 +39,7 @@ module "chat_lambda" {
 }
 
 # API Gateway Module - REST API for Lambda Function
+/*
 module "api_gateway" {
   source = "../../modules/api_gateway"
 
@@ -47,3 +48,4 @@ module "api_gateway" {
   lambda_function_name = module.chat_lambda.lambda_function_name
   tags                 = local.common_tags
 }
+*/

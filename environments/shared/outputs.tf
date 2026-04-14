@@ -13,7 +13,8 @@ output "dynamodb_table_name" {
   value       = module.dynamodb.table_name
 }
 
-output "api_gateway_endpoint" {
-  description = "API Gateway invoke URL endpoint for accessing the chat API"
-  value       = module.api_gateway.api_endpoint
-}
+
+# output "api_gateway_endpoint" {
+#   description = "API Gateway invoke URL endpoint for accessing the chat API"
+#   value       = module.api_gateway.api_endpoint
+# }

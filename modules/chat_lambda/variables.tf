@@ -9,8 +9,8 @@ variable "runtime" {
   default     = "python3.12"
 }
 
-variable "source_file" {
-  description = "The path to the Python code file"
+variable "source_dir" {
+  description = "The path to the directory containing the Python code for the lambda function"
   type        = string
 }
 

@@ -39,3 +39,15 @@ venv/
 # OS hidden files
 .DS_Store
 Thumbs.db
+
+# Kiro files
+.kiro/
+
+#vscode files
+.vscode/
+
+# python virtual environment
+.venv/
+
+# env file
+.env

@@ -1,0 +1,14 @@
+Review code for the creation API Gateway, DynamoDB
+Add resources for the Application (Bedrock (if needed), CDN ...)
+Update Lambda function code
+Create assets for frontend side (HTML, CSS, JS)
+
+- Optiopnal for now
+Login 
+
+
+cd environments/shared
+
+terraform init -reconfigure -backend-config=../development/backend.hcl
+terraform plan  -var-file=../development/terraform.tfvars
+terraform apply -var-file=../development/terraform.tfvars
