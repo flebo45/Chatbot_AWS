@@ -2,13 +2,23 @@ variable "project_name" {
   type = string
 }
 
-variable "lambda_arn" {
-  description = "The ARN of the Lambda function"
+variable "post_lambda_arn" {
+  description = "The ARN of the Lambda function for POST requests"
   type        = string
 }
 
-variable "lambda_function_name" {
-  description = "The name of the Lambda function"
+variable "get_lambda_arn" {
+  description = "The ARN of the Lambda function for GET requests"
+  type        = string
+}
+
+variable "post_lambda_function_name" {
+  description = "The name of the Lambda function for POST requests"
+  type        = string
+}
+
+variable "get_lambda_function_name" {
+  description = "The name of the Lambda function for GET requests"
   type        = string
 }
 

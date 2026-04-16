@@ -12,3 +12,7 @@ output "lambda_role_arn" {
   description = "The ARN of the Lambda execution IAM role"
   value       = aws_iam_role.lambda_role.arn
 }
+
+output "invoke_arn" {
+  value = aws_lambda_function.this.invoke_arn
+}

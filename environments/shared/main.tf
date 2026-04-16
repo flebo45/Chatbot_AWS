@@ -25,16 +25,27 @@ module "dynamodb" {
   tags       = local.common_tags
 }
 
-# Lambda Module - Chat Handler Function
+#  Post Lambda Module - Chat Handler Function
 module "chat_lambda" {
   source = "../../modules/chat_lambda"
 
-  function_name       = local.lambda_function_name
+  function_name       = "${local.lambda_function_name}-post-message"
   source_dir         = "../../modules/chat_lambda/src"
   runtime             = var.lambda_runtime
   dynamodb_table_arn  = module.dynamodb.table_arn
   dynamodb_table_name = module.dynamodb.table_name
   bedrock_model_arn   = var.bedrock_model_arn
+  tags                = local.common_tags
+}
+
+# Get Lambda Module - Chat History Handler Function
+module "history_lambda" {
+  source = "../../modules/history_lambda"
+  function_name       = "${local.lambda_function_name}-get-history"
+  source_dir         = "../../modules/history_lambda/src"
+  runtime             = var.lambda_runtime
+  dynamodb_table_arn  = module.dynamodb.table_arn
+  dynamodb_table_name = module.dynamodb.table_name
   tags                = local.common_tags
 }
 
@@ -60,9 +71,13 @@ module "api_gateway" {
   source = "../../modules/api_gateway"
   project_name = local.resource_prefix
 
-  # Lambda connection
-  lambda_arn = module.chat_lambda.lambda_arn
-  lambda_function_name = module.chat_lambda.lambda_function_name
+  # POST Lambda connection
+  post_lambda_arn = module.chat_lambda.invoke_arn
+  post_lambda_function_name = module.chat_lambda.lambda_function_name
+
+  # GET Lambda connection
+  get_lambda_arn = module.history_lambda.invoke_arn
+  get_lambda_function_name = module.history_lambda.lambda_function_name
 
   # Secure CORS by allowing only ClodFront
   allowed_origins = ["https://${module.cloudfront_frontend.domain_name}"]

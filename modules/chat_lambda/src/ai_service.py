@@ -34,6 +34,8 @@ def ask_bedrock(history, new_message):
         "content": [{"text": new_message}]
     })
 
+    #TODO: Add Streaming Response with ConverseStream API
+    #TODO: Add better inferenceConfig, guardrails
     try:
         response = bedrock.converse(
             modelId=model_id,
