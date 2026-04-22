@@ -4,9 +4,11 @@ import boto3
 import os
 
 from fastapi import FastAPI, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 
 from starlette.background import BackgroundTask
+
+from fastapi.middleware.cors import CORSMiddleware
 
 from db_serice import get_chat_history, save_chat_message
 from ai_service import ask_bedrock
@@ -18,6 +20,15 @@ logger.setLevel(logging.INFO)
 # Initialize FastAPI app
 app = FastAPI()
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[os.environ['CLOUDFRONT_URL']], # In production, replace with your CloudFront URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"]
+)
+
 @app.post("/{full_path:path}")
 async def chat_endpoint(request: Request):
     try:
@@ -26,7 +37,7 @@ async def chat_endpoint(request: Request):
         user_id = body.get("user_id", "anonymous")
 
         if not user_message:
-            return {"error": "Message is required"}
+            return JSONResponse(status_code=400, content={"error": "Message is required"})
 
         history = get_chat_history(user_id)
         collected_tokens = []
@@ -46,7 +57,7 @@ async def chat_endpoint(request: Request):
 
         return StreamingResponse(
             stream_generator(),
-            media_type="text/plain",
+            media_type="text/event-stream",
             headers={
                 # "Access-Control-Allow-Origin": "*",
                 # "Access-Control-Allow-Methods": "POST, OPTIONS, GET",
@@ -61,4 +72,8 @@ async def chat_endpoint(request: Request):
     
     except Exception as e:
         logger.error(f"Error in chat endpoint: {str(e)}")
-        return {"error": "An error occurred while processing your request."}
+        # Return a proper 500 error WITH the CORS headers!
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Internal Server Error: {str(e)}"},
+        )

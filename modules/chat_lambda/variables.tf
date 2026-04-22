@@ -44,3 +44,8 @@ variable "guardrail_arn" {
   description = "The ARN of the Bedrock Guardrail"
   type        = string
 }
+
+variable "cloudfront_url" {
+  description = "The URL of the CloudFront distribution for CORS configuration"
+  type        = string
+}

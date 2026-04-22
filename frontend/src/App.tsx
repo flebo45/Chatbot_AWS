@@ -24,10 +24,7 @@ const USER_ID = getOrCreateUserId();
 
 // PASTE YOUR TERRAFORM OUTPUT URL HERE (Must be https://.../chat)
 const API_URL =
-  "https://iorg3jsrs1.execute-api.eu-central-1.amazonaws.com/production/chat";
-
-const STREAM_URL =
-  "https://actyrbqpxlhhztqoy7p2nmydbm0uyrax.lambda-url.eu-central-1.on.aws/";
+  "https://de53u52af0.execute-api.eu-west-1.amazonaws.com/production/chat";
 
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);

@@ -32,6 +32,7 @@ module "chat_lambda" {
   function_name       = "${local.lambda_function_name}-post-message"
   source_dir         = "../../modules/chat_lambda/src"
   runtime             = var.lambda_runtime
+  cloudfront_url = "https://${module.cloudfront_frontend.domain_name}"
   dynamodb_table_arn  = module.dynamodb.table_arn
   dynamodb_table_name = module.dynamodb.table_name
   bedrock_model_arn   = var.bedrock_model_arn
@@ -61,7 +62,7 @@ module "history_lambda" {
 # S3 Frontend Module - Static Assets for Frontend
 module "frontend_bucket" {
   source = "../../modules/s3_frontend"
-  bucket_name = "${local.resource_prefix}-frontend-assets"
+  bucket_name = "${local.resource_prefix}-frontend"
   cloudfront_distribution_arn = module.cloudfront_frontend.distribution_arn
   tags = local.common_tags
 }

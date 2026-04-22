@@ -2,6 +2,18 @@
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
+locals {
+  # Generate a unique hash based ONLY on your actual source code
+  source_hash = sha256(join("", [
+    filesha256("${var.source_dir}/index.py"),
+    filesha256("${var.source_dir}/Dockerfile"),
+    filesha256("${var.source_dir}/requirements.txt")
+  ]))
+  
+  # Take the first 16 characters to make a clean, unique Docker tag (e.g., "a1b2c3d4e5f6g7h8")
+  image_tag = substr(local.source_hash, 0, 16)
+}
+
 # Trust Policy for Lambda Execution Role
 data "aws_iam_policy_document" "assume_role" {
   statement {
@@ -80,13 +92,7 @@ resource "aws_ecr_repository" "chatbot_repo" {
 # Docker image build and push to ECR
 resource "null_resource" "docker_build_push" {
   triggers = {
-    # This forces a rebuild ONLY if your python code, requirements, or Dockerfile changes
-    src_hash = sha256(join("", [
-      filesha256("${var.source_dir}/index.py"),
-      filesha256("${var.source_dir}/ai_service.py"),
-      filesha256("${var.source_dir}/Dockerfile"),
-      filesha256("${var.source_dir}/requirements.txt")
-    ]))
+    src_hash = local.image_tag
   }
 
   provisioner "local-exec" {
@@ -94,9 +100,9 @@ resource "null_resource" "docker_build_push" {
     command = <<EOF
       aws ecr get-login-password --region ${data.aws_region.current.name} | docker login --username AWS --password-stdin ${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com
       
-      docker build --platform linux/amd64 --provenance=false -t ${aws_ecr_repository.chatbot_repo.repository_url}:latest ${var.source_dir}
+      docker build --platform linux/amd64 --provenance=false -t ${aws_ecr_repository.chatbot_repo.repository_url}:${local.image_tag} ${var.source_dir}
       
-      docker push ${aws_ecr_repository.chatbot_repo.repository_url}:latest
+      docker push ${aws_ecr_repository.chatbot_repo.repository_url}:${local.image_tag}
     EOF
   }
 }
@@ -105,15 +111,17 @@ resource "aws_lambda_function" "this" {
   depends_on       = [null_resource.docker_build_push] # Ensures image is pushed BEFORE Lambda is created
   function_name    = var.function_name
   role             = aws_iam_role.lambda_role.arn
- package_type     = "Image"
-  image_uri        = "${aws_ecr_repository.chatbot_repo.repository_url}:latest"
+  package_type     = "Image"
+  image_uri        = "${aws_ecr_repository.chatbot_repo.repository_url}:${local.image_tag}"
   timeout          = 60
+  description = timestamp()
 
   environment {
     variables = {
       TABLE_NAME = var.dynamodb_table_name
       BEDROCK_MODEL_ID = var.bedrock_model_arn
       GUARDRAILS_ID = var.guardrails_id
+      CLOUDFRONT_URL = var.cloudfront_url
 
       AWS_LWA_INVOKE_MODE     = "RESPONSE_STREAM"
     }
