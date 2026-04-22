@@ -4,9 +4,10 @@ import os
 import logging
 from botocore.exceptions import ClientError
 
-# Initialization resurces
+# Initialization resources
 bedrock = boto3.client('bedrock-runtime', region_name=os.environ['AWS_REGION'])
 model_id = os.environ['BEDROCK_MODEL_ID']
+guardrails_id = os.environ['GUARDRAILS_ID']
 
 # Logging for CloudWatch
 logger = logging.getLogger()
@@ -34,31 +35,35 @@ def ask_bedrock(history, new_message):
         "content": [{"text": new_message}]
     })
 
-    #TODO: Add Streaming Response with ConverseStream API
-    #TODO: Add better inferenceConfig, guardrails
     try:
-        response = bedrock.converse(
-            modelId=model_id,
-            messages=formatted_messages,
-            system=[{"text": "You are a highly intelligent, concise, and helpful AI cloud architect. Respond politely but get straight to the point."}],
-            inferenceConfig={
+        converse_kwags = {
+            "modelId": model_id,
+            "messages": formatted_messages,
+            "system": [{"text": "You are the digital patient coordinator and triage assistant for a professional healthcare clinic. Your tone must always be highly empathetic, reassuring, professional, and concise. You can also anwser general purpose questions."}],
+            "inferenceConfig": {
                 "maxTokens": 1000,
                 "temperature": 0.7
             }
-        )
-        ai_response = response['output']['message']['content'][0]['text']
-        logger.info(f"Received response from Bedrock for model {model_id}")
-        return ai_response
+        }
+
+        if guardrails_id:
+            logger.info(f"Using guardrails with ID: {guardrails_id}")
+            converse_kwags["guardrailConfig"] = {
+                "guardrailIdentifier": guardrails_id,
+                "guardrailVersion": "DRAFT",
+                "trace": "enabled"
+            }
+
+        response = bedrock.converse_stream(**converse_kwags)
+
+        for chunk in response.get('stream'):
+            if 'contentBlockDelta' in chunk:
+                text_delta = chunk['contentBlockDelta']['delta']['text']
+                yield text_delta
     
     except ClientError as e:
-        error_code = e.response['Error']['Code']
-        logger.error(f"Bedrock API Error: {error_code} - {str(e)}")
-        
-        # Graceful degradation: Tell the user something went wrong
-        if error_code == 'ThrottlingException':
-            return "I'm receiving too many messages right now. Please try again in a moment."
-        else:
-            return "I'm having trouble connecting to my AI brain right now. Please try again later."
+        logger.error(f"Bedrock API Error: {str(e)}")
+        yield "I'm having trouble connecting to my AI brain right now. Please try again later."
     except Exception as e:
-        logger.error(f"Unexpected error in ask_bedrock: {str(e)}")
-        return "An unexpected error occurred."
+        logger.error(f"Unexpected error: {str(e)}")
+        yield "An unexpected error occurred."

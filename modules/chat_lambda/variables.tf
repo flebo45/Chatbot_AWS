@@ -29,8 +29,18 @@ variable "bedrock_model_arn" {
   type        = string
 }
 
+variable "guardrails_id" {
+  description = "The ID of the Bedrock Guardrails to be used by the Lambda function"
+  type        = string
+}
+
 variable "tags" {
   description = "Tags to apply to Lambda function and IAM role resources"
   type        = map(string)
   default     = {}
+}
+
+variable "guardrail_arn" {
+  description = "The ARN of the Bedrock Guardrail"
+  type        = string
 }

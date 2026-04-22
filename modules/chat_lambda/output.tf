@@ -16,3 +16,8 @@ output "lambda_role_arn" {
 output "invoke_arn" {
   value = aws_lambda_function.this.invoke_arn
 }
+
+output "response_streaming_invoke_arn" {
+  description = "The ARN used by API Gateway to stream responses"
+  value       = aws_lambda_function.this.response_streaming_invoke_arn
+}

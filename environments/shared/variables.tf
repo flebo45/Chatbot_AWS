@@ -32,9 +32,4 @@ variable "lambda_runtime" {
 variable "bedrock_model_arn" {
   description = "ARN of the Bedrock model for Lambda function access"
   type        = string
-
-  validation {
-    condition     = can(regex("^arn:aws:bedrock:[a-z0-9-]+::.*$", var.bedrock_model_arn))
-    error_message = "Bedrock model ARN must be a valid AWS ARN format (arn:aws:bedrock:region::...)"
-  }
 }

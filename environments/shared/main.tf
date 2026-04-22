@@ -35,7 +35,16 @@ module "chat_lambda" {
   dynamodb_table_arn  = module.dynamodb.table_arn
   dynamodb_table_name = module.dynamodb.table_name
   bedrock_model_arn   = var.bedrock_model_arn
+  guardrails_id       = module.guardrail.guardrail_id
+  guardrail_arn      = module.guardrail.guardrail_arn
   tags                = local.common_tags
+}
+
+module "guardrail" {
+  source = "../../modules/bedrock_guardrails"
+  project_name = local.resource_prefix
+
+  tags = local.common_tags
 }
 
 # Get Lambda Module - Chat History Handler Function
@@ -66,21 +75,25 @@ module "cloudfront_frontend" {
   tags = local.common_tags
 }
 
-# API Gateway Module - HTTP API for Chatbot
+
+# API Gateway Module - WebSocket API for Chatbot
 module "api_gateway" {
   source = "../../modules/api_gateway"
   project_name = local.resource_prefix
 
-  # POST Lambda connection
-  post_lambda_arn = module.chat_lambda.invoke_arn
+  # POST Connection (Chat Streaming)
+  post_lambda_arn           = module.chat_lambda.response_streaming_invoke_arn
   post_lambda_function_name = module.chat_lambda.lambda_function_name
 
-  # GET Lambda connection
-  get_lambda_arn = module.history_lambda.invoke_arn
+  # REST Connection (Chat History)
+  get_lambda_arn           = module.history_lambda.invoke_arn
   get_lambda_function_name = module.history_lambda.lambda_function_name
 
-  # Secure CORS by allowing only ClodFront
-  allowed_origins = ["https://${module.cloudfront_frontend.domain_name}"]
+  # Allowed origins for CORS (CloudFront URL)
+  allowed_origins = [
+    "https://${module.cloudfront_frontend.domain_name}", 
+    "http://localhost:3000"
+  ]
   tags = local.common_tags
 }
 

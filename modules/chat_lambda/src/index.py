@@ -3,6 +3,11 @@ import logging
 import boto3
 import os
 
+from fastapi import FastAPI, Request
+from fastapi.responses import StreamingResponse
+
+from starlette.background import BackgroundTask
+
 from db_serice import get_chat_history, save_chat_message
 from ai_service import ask_bedrock
 
@@ -10,49 +15,50 @@ from ai_service import ask_bedrock
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-def lambda_handler(event, context):
+# Initialize FastAPI app
+app = FastAPI()
+
+@app.post("/{full_path:path}")
+async def chat_endpoint(request: Request):
     try:
-        # Unpack API Gateway event
-        body = json.loads(event.get('body', '{}'))
-        user_message = body.get('message', '')
-        user_id = body.get('user_id', 'anonymous')
+        body = await request.json()
+        user_message = body.get("message", "")
+        user_id = body.get("user_id", "anonymous")
 
         if not user_message:
-            logger.warning("Received empty message from user {user_id}")
-            return _build_response(400, {'error': 'Message cannot be empty.'})
+            return {"error": "Message is required"}
 
-        logger.info(f"Received message from user {user_id}: {user_message}")
-
-        # GET Context
         history = get_chat_history(user_id)
+        collected_tokens = []
 
-        # Thinking
-        ai_response = ask_bedrock(history, user_message)
-
-        # Save the conversation turn to DynamoDB
-        save_chat_message(user_id, user_message, ai_response)
-
-        return _build_response(200, {'reply': ai_response})
-    
-    except json.JSONDecodeError:
-        logger.error("Failed to parse JSON body from API Gateway")
-        return _build_response(400, {'error': 'Invalid JSON format.'})
+        def stream_generator():
+            yield (" " * 2048).encode('utf-8')
+            for token in ask_bedrock(history, user_message):
+                collected_tokens.append(token)
+                yield token.encode('utf-8')
+                # Ensure each token is sent immediately
+                yield b""  
         
-    except Exception as e:
-        logger.error(f"Critical unhandled error in lambda_handler: {str(e)}")
-        # Never send raw Python stack traces to the frontend for security reasons
-        return _build_response(500, {'error': 'Internal Server Error. Our engineers have been notified.'})
+        async def save_after_stream():
+            full_response = "".join(collected_tokens)
+            save_chat_message(user_id, user_message, full_response)
 
-def _build_response(status_code, body):
-    """
-    Helper function to build a standard API Gateway response.
-    """
-    return {
-        'statusCode': status_code,
-        'headers': {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'POST, OPTIONS, GET',
-        },
-        'body': json.dumps(body)
-    }
+
+        return StreamingResponse(
+            stream_generator(),
+            media_type="text/plain",
+            headers={
+                # "Access-Control-Allow-Origin": "*",
+                # "Access-Control-Allow-Methods": "POST, OPTIONS, GET",
+                "X-Accel-Buffering": "no",
+                "Cache-Control": "no-cache, no-transform",
+                "Transfer-Encoding": "chunked",
+            },
+            background=BackgroundTask(
+                lambda: save_chat_message(user_id, user_message, "".join(collected_tokens))
+            ),
+        )
+    
+    except Exception as e:
+        logger.error(f"Error in chat endpoint: {str(e)}")
+        return {"error": "An error occurred while processing your request."}
