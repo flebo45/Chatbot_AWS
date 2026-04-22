@@ -1,0 +1,5 @@
+bucket         = "YOUR_BUCKET_NAME"
+key            = "production/terraform.tfstate"
+region         = "YOUR_REGION"
+dynamodb_table = "flebo-terraform-state-lock"
+encrypt        = true

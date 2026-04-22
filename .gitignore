@@ -19,6 +19,9 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 
+# Ignore backend config files (contain bucket names and account-specific values)
+*.hcl
+
 # Ignore CLI configuration files
 .terraformrc
 terraform.rc
@@ -36,3 +39,21 @@ venv/
 # OS hidden files
 .DS_Store
 Thumbs.db
+
+# Kiro files
+.kiro/
+
+#vscode files
+.vscode/
+
+# python virtual environment
+.venv/
+
+# env file
+.env
+
+# TODO
+todo.txt
+
+# Deploy
+deploy_frontend.sh

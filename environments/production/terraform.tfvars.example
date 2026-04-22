@@ -1,0 +1,6 @@
+environment    = "production"
+project_name   = "chatbot"
+aws_region     = "YOUR_REGION"          # e.g. eu-central-1
+lambda_runtime = "python3.12"
+
+bedrock_model_arn = "arn:aws:bedrock:YOUR_REGION:YOUR_ACCOUNT_ID:foundation-model/anthropic.claude-v2"
