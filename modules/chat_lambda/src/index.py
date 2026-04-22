@@ -49,10 +49,14 @@ async def chat_endpoint(request: Request):
                 yield token.encode('utf-8')
                 # Ensure each token is sent immediately
                 yield b""  
-        
-        async def save_after_stream():
-            full_response = "".join(collected_tokens)
-            save_chat_message(user_id, user_message, full_response)
+            
+            try:
+                # Finalize the response and save the chat message to DynamoDB
+                full_response = "".join(collected_tokens)
+                save_chat_message(user_id, user_message, full_response)
+                logger.info(f"Successfully saved chat for user {user_id}")
+            except Exception as db_error:
+                logger.error(f"Failed to save message to DB: {str(db_error)}")
 
 
         return StreamingResponse(
@@ -64,10 +68,7 @@ async def chat_endpoint(request: Request):
                 "X-Accel-Buffering": "no",
                 "Cache-Control": "no-cache, no-transform",
                 "Transfer-Encoding": "chunked",
-            },
-            background=BackgroundTask(
-                lambda: save_chat_message(user_id, user_message, "".join(collected_tokens))
-            ),
+            }
         )
     
     except Exception as e:
@@ -76,4 +77,9 @@ async def chat_endpoint(request: Request):
         return JSONResponse(
             status_code=500,
             content={"error": f"Internal Server Error: {str(e)}"},
+            headers={
+                "Access-Control-Allow-Origin": os.environ['CLOUDFRONT_URL'],
+                "Access-Control-Allow-Methods": "POST, OPTIONS, GET",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            }
         )
