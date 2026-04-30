@@ -1,7 +1,10 @@
 import json
 import logging
+import sys
 import boto3
 import os
+import uuid
+from botocore.config import Config
 
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -14,8 +17,19 @@ from db_serice import get_chat_history, save_chat_message
 from ai_service import ask_bedrock
 
 # Logging for CloudWatch
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+logging.basicConfig(
+    stream=sys.stdout, 
+    level=logging.INFO,
+    format='%(levelname)s: %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# S3 initialization
+s3 = boto3.client('s3',
+                  region_name= 'eu-west-1',
+                  config=Config(signature_version='s3v4', s3={'addressing_style': 'virtual'}))
+
+BUCKET_NAME = os.environ['BUCKET_NAME']
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -28,6 +42,72 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"]
 )
+
+@app.post("/upload-url")
+async def get_upload_url(request: Request):
+    try:
+        body = await request.json()
+        filename = body.get("filename")
+        user_id = body.get("user_id")
+        if not filename or not user_id:
+            return JSONResponse(status_code=400, content={"error": "Filename is required"}, headers={"Access-Control-Allow-Origin": "*"})
+
+        if not BUCKET_NAME:
+            logger.error("S3_BUCKET_NAME environment variable is not set.")
+            return JSONResponse(status_code=500, content={"error": "Internal Server Error: S3 bucket not configured"}, headers={"Access-Control-Allow-Origin": "*"})
+        
+        # Safe S3  key generation
+        file_id = str(uuid.uuid4())
+        fileType = filename.split(".")[-1]
+        safe_filename = f"uploads/{user_id}/{file_id}_{filename}"
+
+        # Bedrock Metadata JSON
+        metadata_key = f"{safe_filename}.metadata.json"
+        metadata_content = json.dumps({
+            "metadataAttributes": {
+                "userId": user_id,
+                "originalFilename": filename,
+                "fileType": fileType
+            }
+        })
+
+        s3.put_object(
+            Bucket=BUCKET_NAME, 
+            Key=metadata_key, 
+            Body=metadata_content, 
+            ContentType='application/json',
+            ServerSideEncryption='AES256'
+        )
+
+        # Generate presigned URL for the actual file upload
+        presigned_url = s3.generate_presigned_url(
+            'put_object',
+            Params={
+            'Bucket': BUCKET_NAME, 
+            'Key': safe_filename,
+            'ContentType': f'application/{fileType}',
+            #'ServerSideEncryption': 'AES256'
+            },
+            ExpiresIn=300
+        )
+
+        return JSONResponse(
+            status_code=200, 
+            content={"upload_url": presigned_url, "file_key": safe_filename},
+            headers={"Access-Control-Allow-Origin": "POST, OPTIONS"}
+        )
+    
+    except Exception as e:
+        logger.error(f"Error generating presigned URL: {str(e)}")
+        # 5. MUST attach CORS headers here so the browser lets the error through!
+        return JSONResponse(
+            status_code=500, 
+            content={"error": f"Upload Error: {str(e)}"},
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "POST, OPTIONS"
+            }
+        )
 
 @app.post("/{full_path:path}")
 async def chat_endpoint(request: Request):
@@ -43,8 +123,8 @@ async def chat_endpoint(request: Request):
         collected_tokens = []
 
         def stream_generator():
-            yield (" " * 2048).encode('utf-8')
-            for token in ask_bedrock(history, user_message):
+            # yield (" " * 2048).encode('utf-8')
+            for token in ask_bedrock(history, user_message, user_id):
                 collected_tokens.append(token)
                 yield token.encode('utf-8')
                 # Ensure each token is sent immediately

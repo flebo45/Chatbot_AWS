@@ -5,6 +5,80 @@ resource "aws_api_gateway_rest_api" "this" {
   tags        = var.tags
 }
 
+# API Resource - /upload-url
+resource "aws_api_gateway_resource" "upload_url" {
+  rest_api_id = aws_api_gateway_rest_api.this.id
+  parent_id   = aws_api_gateway_rest_api.this.root_resource_id
+  path_part   = "upload-url"
+}
+
+# API Method - POST /upload-url
+resource "aws_api_gateway_method" "post_upload_url" {
+  rest_api_id   = aws_api_gateway_rest_api.this.id
+  resource_id   = aws_api_gateway_resource.upload_url.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+# API Integration - Lambda Function for Generating Pre-signed URLs
+resource "aws_api_gateway_integration" "post_upload_url_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.this.id
+  resource_id = aws_api_gateway_resource.upload_url.id
+  http_method = aws_api_gateway_method.post_upload_url.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = var.post_lambda_arn
+
+  response_transfer_mode = "STREAM"
+  timeout_milliseconds = 29000
+}
+
+# CORS for /upload-url
+resource "aws_api_gateway_method" "options_upload_url" {
+  rest_api_id   = aws_api_gateway_rest_api.this.id
+  resource_id   = aws_api_gateway_resource.upload_url.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "options_upload_url" {
+  rest_api_id = aws_api_gateway_rest_api.this.id
+  resource_id = aws_api_gateway_resource.upload_url.id
+  http_method = aws_api_gateway_method.options_upload_url.http_method
+
+  type = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "options_upload_url_200" {
+  rest_api_id = aws_api_gateway_rest_api.this.id
+  resource_id = aws_api_gateway_resource.upload_url.id
+  http_method = aws_api_gateway_method.options_upload_url.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin"  = true,
+    "method.response.header.Access-Control-Allow-Methods" = true,
+    "method.response.header.Access-Control-Allow-Headers" = true,
+  }
+}
+
+resource "aws_api_gateway_integration_response" "options_upload_url" {
+  rest_api_id = aws_api_gateway_rest_api.this.id
+  resource_id = aws_api_gateway_resource.upload_url.id
+  http_method = aws_api_gateway_method.options_upload_url.http_method
+  status_code = aws_api_gateway_method_response.options_upload_url_200.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'",
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'",
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+  }
+}
+
 # API Resource - /chat
 resource "aws_api_gateway_resource" "chat" {
   rest_api_id = aws_api_gateway_rest_api.this.id
@@ -107,7 +181,11 @@ resource "aws_api_gateway_deployment" "this" {
       aws_api_gateway_integration.get_history_lambda.id,
       aws_api_gateway_method.post_chat.id,
       aws_api_gateway_integration.post_chat_lambda.id,
-      aws_api_gateway_integration_response.options.response_parameters
+      aws_api_gateway_integration_response.options.response_parameters,
+      aws_api_gateway_resource.upload_url.id,
+      aws_api_gateway_method.post_upload_url.id,
+      aws_api_gateway_integration.post_upload_url_lambda.id,
+      aws_api_gateway_integration_response.options_upload_url.response_parameters,
     ]))
   }
 

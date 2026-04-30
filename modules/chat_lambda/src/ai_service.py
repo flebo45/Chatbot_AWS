@@ -1,22 +1,61 @@
 import boto3
 import json
 import os
+import sys
 import logging
 from botocore.exceptions import ClientError
 
 # Initialization resources
 bedrock = boto3.client('bedrock-runtime', region_name=os.environ['AWS_REGION'])
+bedrock_agent = boto3.client('bedrock-agent-runtime', region_name=os.environ['AWS_REGION'])
+
 model_id = os.environ['BEDROCK_MODEL_ID']
 guardrails_id = os.environ['GUARDRAILS_ID']
+knowledge_base_id = os.environ['KNOWLEDGE_BASE_ID']
 
 # Logging for CloudWatch
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+logging.basicConfig(
+    stream=sys.stdout, 
+    level=logging.INFO,
+    format='%(levelname)s: %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-def ask_bedrock(history, new_message):
+def ask_bedrock(history, new_message, user_id):
     """
-    Takes the chat history from DynamoDB and the new user message, and sends it to Bedrock to get a response.
+    Retrieves context from the Knowledge Base, formats the chat history, 
+    and sends everything to Bedrock for a streamed response.
     """
+    retrived_content = ""
+    if knowledge_base_id and user_id:
+        try:
+            logger.info(f"Querying knowledge base {knowledge_base_id} for user {user_id}")
+            retrival_response = bedrock_agent.retrieve(
+                knowledgeBaseId = knowledge_base_id,
+                retrievalQuery = {'text': new_message},
+                retrievalConfiguration = {
+                    'vectorSearchConfiguration': {
+                        'numberOfResults': 5, # Fetch the top 5 most relevant chunks
+                        'filter': {
+                            'equals': {
+                                'key': 'userId', # must match the metadata.json
+                                'value': user_id
+                            }
+                        }
+                    }
+                }
+            )
+
+            results = retrival_response.get('retrievalResults', [])
+
+            if results:
+                context_chunks = [f"<document>\n{res['content']['text']}\n</document>" for res in results]
+                retrieved_context = "\n\n".join(context_chunks)
+                logger.info(f"Successfully retrieved {len(results)} chunks of context.")
+            
+        except Exception as e:
+            logger.error(f"Error retrieving from knowledge base: {str(e)}")
+
     # Formatting messages
     formatted_messages = []
 
@@ -35,11 +74,18 @@ def ask_bedrock(history, new_message):
         "content": [{"text": new_message}]
     })
 
+    # System prompt with RAG instructions
+    #system_prompt = "You are the digital patient coordinator and triage assistant for a professional healthcare clinic. Your tone must always be highly empathetic, reassuring, professional, and concise. You can also anwser general purpose questions abaout everything."
+    system_prompt = "You are a helpful and precise assistant for answering user questions."
+    # Inject RAG
+    if retrieved_context:
+        system_prompt += f"\n\nHere is relevant context extracted from the user's uploaded documents. Use this information to answer their question. If the answer is not in the documents, just use your general knowledge.\n\n<context>\n{retrieved_context}\n</context>"
+
     try:
         converse_kwags = {
             "modelId": model_id,
             "messages": formatted_messages,
-            "system": [{"text": "You are the digital patient coordinator and triage assistant for a professional healthcare clinic. Your tone must always be highly empathetic, reassuring, professional, and concise. You can also anwser general purpose questions."}],
+            "system": [{"text": system_prompt}],
             "inferenceConfig": {
                 "maxTokens": 1000,
                 "temperature": 0.7

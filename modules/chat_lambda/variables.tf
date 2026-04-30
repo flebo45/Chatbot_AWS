@@ -49,3 +49,18 @@ variable "cloudfront_url" {
   description = "The URL of the CloudFront distribution for CORS configuration"
   type        = string
 }
+
+variable "s3_bucket_name" {
+  description = "The name of the S3 bucket for document storage, used by the Lambda function"
+  type        = string
+}
+
+variable "knowledge_base_id" {
+  description = "The ID of the Bedrock Agent Knowledge Base to be used by the Lambda function"
+  type        = string
+}
+
+variable "knowledge_base_arn" {
+  description = "The ARN of the Bedrock Agent Knowledge Base to be used by the Lambda function"
+  type        = string
+}

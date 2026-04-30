@@ -1,13 +1,17 @@
 import boto3
 from boto3.dynamodb.conditions import Key
 import os
+import sys
 import logging
 from datetime import datetime, timezone
 
 # Logging for CloudWatch
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-
+logging.basicConfig(
+    stream=sys.stdout, 
+    level=logging.INFO,
+    format='%(levelname)s: %(message)s'
+)
+logger = logging.getLogger(__name__)
 #Resource Initialization
 dynamodb = boto3.resource('dynamodb')
 table_name = os.environ['TABLE_NAME']

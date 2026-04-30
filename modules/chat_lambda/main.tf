@@ -81,6 +81,45 @@ resource "aws_iam_role_policy_attachment" "lambda_logs" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
+# Allow the Chat Lambda to put metadata and generate presigned URLs in the S3 bucket
+resource "aws_iam_role_policy" "s3_upload_permissions" {
+  name   = "chat_lambda_s3_upload_policy"
+  role   = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject"
+        ]
+        # Constructs the ARN using the bucket name passed from root
+        Resource = "arn:aws:s3:::${var.s3_bucket_name}/uploads/*" 
+      }
+    ]
+  })
+}
+
+# Allow the Chat Lambda to query the Bedrock Agent Knowledge Base
+resource "aws_iam_role_policy" "kb_query_permissions" {
+  name   = "chat_lambda_kb_query_policy"
+  role   = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "bedrock:Retrieve"
+        ]
+        Resource = var.knowledge_base_arn
+      }
+    ]
+  })
+}
+
 # ECR Repository for Lambda Docker Image
 resource "aws_ecr_repository" "chatbot_repo" {
   name                 = "${var.function_name}-repo"
@@ -122,6 +161,8 @@ resource "aws_lambda_function" "this" {
       BEDROCK_MODEL_ID = var.bedrock_model_arn
       GUARDRAILS_ID = var.guardrails_id
       CLOUDFRONT_URL = var.cloudfront_url
+      BUCKET_NAME = var.s3_bucket_name
+      KNOWLEDGE_BASE_ID = var.knowledge_base_id
 
       AWS_LWA_INVOKE_MODE     = "RESPONSE_STREAM"
     }

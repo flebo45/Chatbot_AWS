@@ -38,6 +38,9 @@ module "chat_lambda" {
   bedrock_model_arn   = var.bedrock_model_arn
   guardrails_id       = module.guardrail.guardrail_id
   guardrail_arn      = module.guardrail.guardrail_arn
+  s3_bucket_name     = module.s3_documents.s3_documents_bucket_name
+  knowledge_base_id  = module.knowledge_bases.bedrock_agent_knowledge_base_id
+  knowledge_base_arn = module.knowledge_bases.bedrock_agent_knowledge_base_arn
   tags                = local.common_tags
 }
 
@@ -97,6 +100,55 @@ module "api_gateway" {
   ]
   tags = local.common_tags
 }
+
+module "s3_documents" {
+  source = "../../modules/s3_documents"
+
+  project_name = local.resource_prefix
+  s3_documents_bucket_name = "${local.resource_prefix}-documents"
+
+  allowed_origins = [
+    "https://${module.cloudfront_frontend.domain_name}", 
+    "http://localhost:3000"
+  ]
+
+  tags = local.common_tags
+  
+}
+
+module "knowledge_bases" {
+  source = "../../modules/knowledge_bases"
+
+  knowledge_base_name = "${local.resource_prefix}-kb"
+  s3vectors_bucket_name = "${local.resource_prefix}-vectors"
+  s3vectors_index_name = "${local.resource_prefix}-vectors-index"
+
+  s3vectors_data_type = var.s3vectors_data_type
+  s3_documents_bucket_arn = module.s3_documents.s3_documents_bucket_arn
+
+
+  embedding_model_arn = var.embedding_model_arn
+
+  embedding_dimensions = var.embedding_dimensions
+  embedding_data_type = var.embedding_data_type
+  tags = local.common_tags
+}
+
+module "rag_lambda" {
+  source = "../../modules/rag_trigger"
+
+  function_name       = "${local.resource_prefix}-rag-trigger"
+  source_dir         = "../../modules/rag_trigger/src"
+  runtime             = var.lambda_runtime
+
+  bedrock_agent_knowledge_base_id = module.knowledge_bases.bedrock_agent_knowledge_base_id
+  bedrock_agent_data_source_id    = module.knowledge_bases.bedrock_agent_data_source_id
+  sqs_queue_arn = module.s3_documents.sqs_queue_arn
+  bedrock_agent_knowledge_base_arn = module.knowledge_bases.bedrock_agent_knowledge_base_arn
+
+  tags = local.common_tags
+}
+
 
 module "github_oidc" {
   source = "../../modules/oidc_github"

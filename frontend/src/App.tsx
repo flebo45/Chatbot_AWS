@@ -23,14 +23,20 @@ const getOrCreateUserId = () => {
 const USER_ID = getOrCreateUserId();
 
 // PASTE YOUR TERRAFORM OUTPUT URL HERE (Must be https://.../chat)
-const API_URL =
-  "https://de53u52af0.execute-api.eu-west-1.amazonaws.com/production/chat";
+const BASE_URL =
+  "https://de53u52af0.execute-api.eu-west-1.amazonaws.com/production";
+const API_URL = `${BASE_URL}/chat`;
+const UPLOAD_URL = `${BASE_URL}/upload-url`;
 
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+
+  // File Uploading
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState("");
 
   // 2. HYDRATION HOOK (GET Request for Chat History)
   useEffect(() => {
@@ -174,6 +180,79 @@ export default function App() {
     }
   }, [inputValue]);
 
+  const handleFileUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    setIsUploading(true);
+
+    try {
+      // Loop through all selected files
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const fileType = file.type;
+        setUploadStatus(`Uploading ${file.name} (${i + 1}/${files.length})...`);
+
+        // 1. Get the VIP Pass (Presigned URL) from FastAPI
+        const urlRes = await fetch(UPLOAD_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: file.name, user_id: USER_ID }),
+        });
+
+        if (!urlRes.ok)
+          throw new Error(`Failed to get upload URL for ${file.name}`);
+        const { upload_url } = await urlRes.json();
+
+        // 2. Upload directly to S3 Bucket using the PUT method
+        const uploadRes = await fetch(upload_url, {
+          method: "PUT",
+          headers: {
+            // Must match what your Python code signed!
+            "Content-Type": fileType,
+          },
+          body: file, // Send the raw file directly
+        });
+
+        if (!uploadRes.ok)
+          throw new Error(`Failed to upload ${file.name} to S3`);
+      }
+
+      // 3. Fake a short wait for the Bedrock Ingestion Job to trigger via SQS
+      setUploadStatus("Syncing documents to AI Knowledge Base...");
+
+      setTimeout(() => {
+        setIsUploading(false);
+        setUploadStatus("");
+
+        // Push a green system message to the chat so the user knows it worked
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: Date.now().toString(),
+            role: "assistant",
+            content: `✅ Successfully uploaded and synced ${files.length} document(s). You can now ask me questions about them!`,
+            timestamp: new Date(),
+          },
+        ]);
+      }, 3500);
+    } catch (error) {
+      console.error("Upload error:", error);
+      setUploadStatus("⚠️ Upload failed. Check console for details.");
+
+      // Clear the error message after a few seconds
+      setTimeout(() => {
+        setIsUploading(false);
+        setUploadStatus("");
+      }, 4000);
+    } finally {
+      // Reset the input so the user can upload the same file again if needed
+      event.target.value = "";
+    }
+  };
+
   return (
     <div className="flex h-screen bg-background">
       <main className="flex flex-1 flex-col overflow-hidden">
@@ -186,6 +265,25 @@ export default function App() {
         ) : (
           <MessageList messages={messages} isTyping={isTyping} />
         )}
+
+        <div className="px-4 pt-2 bg-background">
+          {isUploading ? (
+            <div className="flex items-center text-sm text-blue-500 animate-pulse">
+              <span className="mr-2">⏳</span> {uploadStatus}
+            </div>
+          ) : (
+            <label className="cursor-pointer text-sm font-medium text-muted-foreground hover:text-primary transition-colors flex items-center w-fit">
+              <span className="mr-1">📎</span> Attach Documents
+              <input
+                type="file"
+                multiple
+                accept=".pdf, .docx, .txt"
+                className="hidden"
+                onChange={handleFileUpload}
+              />
+            </label>
+          )}
+        </div>
 
         <ChatInput
           value={inputValue}
