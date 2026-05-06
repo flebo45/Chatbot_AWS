@@ -7,9 +7,9 @@ locals {
 
   # Common tags applied to all resources
   common_tags = {
-    Environment = var.environment
+    Owner = "al.torrieri@reply.it"
     Project     = var.project_name
-    ManagedBy   = "Terraform"
+    Env   = var.environment
   }
 
   # Computed values for resource naming

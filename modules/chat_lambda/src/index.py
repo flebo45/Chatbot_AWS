@@ -49,6 +49,7 @@ async def get_upload_url(request: Request):
         body = await request.json()
         filename = body.get("filename")
         user_id = body.get("user_id")
+        file_mime_type = body.get("file_type", "application/pdf")
         if not filename or not user_id:
             return JSONResponse(status_code=400, content={"error": "Filename is required"}, headers={"Access-Control-Allow-Origin": "*"})
 
@@ -58,7 +59,7 @@ async def get_upload_url(request: Request):
         
         # Safe S3  key generation
         file_id = str(uuid.uuid4())
-        fileType = filename.split(".")[-1]
+        fileExt = filename.split(".")[-1]
         safe_filename = f"uploads/{user_id}/{file_id}_{filename}"
 
         # Bedrock Metadata JSON
@@ -67,7 +68,7 @@ async def get_upload_url(request: Request):
             "metadataAttributes": {
                 "userId": user_id,
                 "originalFilename": filename,
-                "fileType": fileType
+                "fileType": fileExt
             }
         })
 
@@ -85,7 +86,7 @@ async def get_upload_url(request: Request):
             Params={
             'Bucket': BUCKET_NAME, 
             'Key': safe_filename,
-            'ContentType': f'application/{fileType}',
+            'ContentType': file_mime_type,
             #'ServerSideEncryption': 'AES256'
             },
             ExpiresIn=300

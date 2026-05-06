@@ -193,13 +193,18 @@ export default function App() {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const fileType = file.type;
+        console.log(`Processing file: ${file.name} (${fileType})`);
         setUploadStatus(`Uploading ${file.name} (${i + 1}/${files.length})...`);
 
         // 1. Get the VIP Pass (Presigned URL) from FastAPI
         const urlRes = await fetch(UPLOAD_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename: file.name, user_id: USER_ID }),
+          body: JSON.stringify({
+            filename: file.name,
+            user_id: USER_ID,
+            file_type: fileType,
+          }),
         });
 
         if (!urlRes.ok)
