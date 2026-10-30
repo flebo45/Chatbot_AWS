@@ -22,9 +22,8 @@ const getOrCreateUserId = () => {
 
 const USER_ID = getOrCreateUserId();
 
-// PASTE YOUR TERRAFORM OUTPUT URL HERE (Must be https://.../chat)
-const BASE_URL =
-  "https://de53u52af0.execute-api.eu-west-1.amazonaws.com/production";
+// API Gateway base URL from the Terraform output, set in frontend/.env (see .env.example)
+const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const API_URL = `${BASE_URL}/chat`;
 const UPLOAD_URL = `${BASE_URL}/upload-url`;
 

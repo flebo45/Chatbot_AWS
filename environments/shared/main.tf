@@ -7,7 +7,6 @@ locals {
 
   # Common tags applied to all resources
   common_tags = {
-    Owner = "al.torrieri@reply.it"
     Project     = var.project_name
     Env   = var.environment
   }

@@ -1,309 +1,106 @@
-# Terraform Chatbot Infrastructure
+# Serverless GenAI Chatbot with RAG on AWS
 
-A multi-environment Terraform project for deploying a serverless chatbot on AWS using Lambda, DynamoDB, API Gateway, and AWS Bedrock.
+A serverless chatbot on AWS that answers with streamed responses from Amazon Bedrock, remembers the conversation, and uses the documents each user uploads as context (RAG). The whole infrastructure is written in Terraform, with separate development, test and production environments.
 
-## Overview
+*Built as a hands-on exercise during my 2026 cloud & AI internship. Individual work.*
 
-This project uses a DRY (Don't Repeat Yourself) structure. All shared Terraform code lives in `environments/shared/`. Environment-specific values are isolated in `.tfvars` and `backend.hcl` files — no code duplication across environments.
+## Features
 
-**Architecture:**
+- **Streaming chat** with Amazon Bedrock (Converse Stream API), served as Server-Sent Events.
+- **RAG on your own documents:** upload a file from the browser, it is indexed automatically in a Bedrock Knowledge Base backed by **Amazon S3 Vectors**. Retrieval is filtered by user, so each user only gets context from their own documents.
+- **Bedrock Guardrails** on input and output: prompt attacks, hate, insults, denied topics and PII.
+- **Chat history** per user in DynamoDB (last messages sent back to the model as context).
+- **React + TypeScript frontend** served from S3 through CloudFront.
+- **Infrastructure as code:** 11 Terraform modules, one shared root module and per-environment variables and state (remote state on S3 with locking).
+- **No static AWS keys for deployments:** an IAM role for GitHub with OIDC trust.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    U[Browser<br/>React + TypeScript] -->|static assets| CF[CloudFront] --> S3F[(S3<br/>frontend)]
+    U -->|POST /chat, streaming| APIGW[API Gateway<br/>REST]
+    U -->|GET /chat| APIGW
+    U -->|POST /upload-url| APIGW
+    APIGW --> CL[Chat Lambda<br/>FastAPI in a container]
+    APIGW --> HL[History Lambda]
+    CL -->|retrieve, filtered by userId| KB[Bedrock<br/>Knowledge Base]
+    CL -->|Converse Stream + Guardrail| BR[Amazon Bedrock]
+    CL --> DDB[(DynamoDB<br/>chat history)]
+    HL --> DDB
+    U -->|presigned URL upload| S3D[(S3<br/>documents)]
+    S3D -->|event| SQS[SQS] --> RT[RAG trigger Lambda]
+    RT -->|start ingestion job| KB
+    KB --> VEC[(S3 Vectors<br/>index)]
 ```
-┌─────────────────┐
-│   API Gateway   │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐      ┌──────────────────┐
-│  Lambda Function│─────▶│    DynamoDB      │
-│  (Chat Handler) │      │  (Chat History)  │
-└────────┬────────┘      └──────────────────┘
-         │
-         ▼
-┌─────────────────┐
-│   AWS Bedrock   │
-│   (AI Model)    │
-└─────────────────┘
-```
 
-## Directory Structure
+**How a message flows:** the chat Lambda retrieves the 5 most relevant chunks from the user's documents, adds them to the system prompt with the recent chat history, calls Bedrock with the guardrail attached, streams the answer back token by token, and saves the exchange in DynamoDB.
 
-```
+**How a document is indexed:** the frontend asks for a presigned URL and uploads the file directly to S3, together with a metadata file that carries the user ID. The S3 event goes to an SQS queue, and a small Lambda starts a Knowledge Base ingestion job. Uploading is decoupled from indexing, so the user never waits for it.
+
+**Streaming on Lambda:** the chat function is a FastAPI app packaged as a container image with the [AWS Lambda Web Adapter](https://github.com/awslabs/aws-lambda-web-adapter), behind an API Gateway REST integration with response streaming.
+
+## Tech stack
+
+| Area | Services and tools |
+|---|---|
+| AI | Amazon Bedrock (Converse Stream), Bedrock Knowledge Bases, Amazon S3 Vectors, Bedrock Guardrails |
+| Backend | AWS Lambda (Python 3.12, Boto3), FastAPI, API Gateway, DynamoDB, SQS, S3 |
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS, CloudFront |
+| Infrastructure | Terraform, S3 remote state with DynamoDB locking, IAM with OIDC for GitHub |
+
+## Repository structure
+
+```text
 .
 ├── environments/
-│   ├── shared/                  # Shared Terraform configuration (single source of truth)
-│   │   ├── main.tf              # Module instantiation and locals
-│   │   ├── variables.tf         # Variable declarations
-│   │   ├── outputs.tf           # Root outputs
-│   │   ├── provider.tf          # AWS provider configuration
-│   │   └── backend.tf           # Backend configuration template
-│   ├── development/
-│   │   ├── terraform.tfvars     # Development variable values
-│   │   └── backend.hcl          # Development backend config
+│   ├── shared/          # root module: wires all modules together (single source of truth)
+│   ├── development/     # terraform.tfvars.example, backend.hcl.example
 │   ├── test/
-│   │   ├── terraform.tfvars     # Test variable values
-│   │   └── backend.hcl          # Test backend config
 │   └── production/
-│       ├── terraform.tfvars     # Production variable values
-│       └── backend.hcl          # Production backend config
 ├── modules/
-│   ├── chat_lambda/             # Lambda function + IAM role
-│   ├── api_gateway/             # API Gateway REST API
-│   └── dynamodb/                # DynamoDB table
-├── src/
-│   └── chat_handler.py          # Lambda function source code
-└── docs/
-    ├── DEPLOYMENT.md            # Full deployment guide
-    └── MIGRATION.md             # Migration guide from old structure
+│   ├── api_gateway/         # REST API, streaming integration, CORS
+│   ├── bedrock_guardrails/  # content, topic and PII filters
+│   ├── chat_lambda/         # FastAPI chat service (container image) + IAM
+│   ├── history_lambda/      # GET chat history
+│   ├── dynamodb/            # chat history table
+│   ├── knowledge_bases/     # Bedrock Knowledge Base + S3 Vectors bucket and index
+│   ├── s3_documents/        # user documents, lifecycle rules, S3 → SQS notification
+│   ├── rag_trigger/         # SQS → Knowledge Base ingestion job
+│   ├── s3_frontend/         # private bucket for the frontend
+│   ├── cloudfront_frontend/ # CDN with origin access control
+│   └── oidc_github/         # deploy role for GitHub, no static keys
+└── frontend/                # React + TypeScript app
 ```
 
-## Prerequisites
+## Deploy
 
-- **Terraform** >= 1.0 — `terraform version`
-- **AWS CLI** 2.x — `aws --version`
-- AWS credentials configured — `aws sts get-caller-identity`
-- S3 buckets and DynamoDB lock tables for each environment (see [Backend Setup](#backend-setup))
+**Prerequisites:** Terraform ≥ 1.0, AWS CLI v2 with credentials, access to the Bedrock models you want to use (chat and embeddings) in your region, Docker (to build the chat Lambda image), Node.js (frontend).
 
-**Required IAM permissions:** Lambda, DynamoDB, API Gateway, IAM, S3, CloudWatch Logs.
+1. **Remote state.** Create an S3 bucket for the Terraform state (versioning on) and, for test and production, a DynamoDB table for locking. Then copy `backend.hcl.example` to `backend.hcl` in the environment folder and fill it in.
+2. **Variables.** Copy `terraform.tfvars.example` to `terraform.tfvars` and set region, model ARNs and embedding settings. Both files are git-ignored.
+3. **Apply** from the shared root module, choosing the environment:
 
-## Quick Start
+   ```bash
+   cd environments/shared
+   terraform init -reconfigure -backend-config=../development/backend.hcl
+   terraform plan  -var-file=../development/terraform.tfvars
+   terraform apply -var-file=../development/terraform.tfvars
+   ```
 
-All deployments run from `environments/shared/`. Select the environment by passing the appropriate `backend.hcl` and `terraform.tfvars`.
+4. **Frontend.** Copy `frontend/.env.example` to `frontend/.env`, set `VITE_API_BASE_URL` to the API Gateway URL from the Terraform output, then build and upload:
 
-### Development
+   ```bash
+   cd frontend
+   npm install
+   npm run build
+   aws s3 sync dist/ s3://<frontend-bucket> --delete
+   ```
 
-```bash
-cd environments/shared
-terraform init -backend-config=../development/backend.hcl
-terraform plan -var-file=../development/terraform.tfvars
-terraform apply -var-file=../development/terraform.tfvars
-```
+For production, save the plan with `-out`, review it with `terraform show`, and apply the saved plan.
 
-### Test
+## Notes and limits
 
-```bash
-cd environments/shared
-terraform init -reconfigure -backend-config=../test/backend.hcl
-terraform plan -var-file=../test/terraform.tfvars
-terraform apply -var-file=../test/terraform.tfvars
-```
-
-### Production
-
-```bash
-cd environments/shared
-terraform init -reconfigure -backend-config=../production/backend.hcl
-terraform plan -var-file=../production/terraform.tfvars -out=production.tfplan
-terraform show production.tfplan   # review before applying
-terraform apply production.tfplan
-```
-
-## Configuration
-
-Each environment's `terraform.tfvars` sets these variables:
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `environment` | Environment name | `"production"` |
-| `project_name` | Project identifier (lowercase, hyphens ok) | `"chatbot"` |
-| `aws_region` | AWS region | `"us-east-1"` |
-| `lambda_runtime` | Python runtime | `"python3.12"` |
-| `bedrock_model_arn` | Bedrock model ARN | `"arn:aws:bedrock:..."` |
-
-Update `bedrock_model_arn` in each `terraform.tfvars` with your actual Bedrock model ARN before deploying.
-
-## Backend Setup
-
-Each environment requires an S3 bucket (and DynamoDB lock table for test/production).
-
-### Development
-
-```bash
-aws s3 mb s3://terraform-state-development --region us-east-1
-aws s3api put-bucket-versioning \
-  --bucket terraform-state-development \
-  --versioning-configuration Status=Enabled
-```
-
-### Test
-
-```bash
-aws s3 mb s3://terraform-state-test --region us-east-1
-aws s3api put-bucket-versioning \
-  --bucket terraform-state-test \
-  --versioning-configuration Status=Enabled
-
-aws dynamodb create-table \
-  --table-name terraform-state-lock-test \
-  --attribute-definitions AttributeName=LockID,AttributeType=S \
-  --key-schema AttributeName=LockID,KeyType=HASH \
-  --billing-mode PAY_PER_REQUEST \
-  --region us-east-1
-```
-
-### Production
-
-```bash
-aws s3 mb s3://terraform-state-production --region us-east-1
-aws s3api put-bucket-versioning \
-  --bucket terraform-state-production \
-  --versioning-configuration Status=Enabled
-aws s3api put-bucket-encryption \
-  --bucket terraform-state-production \
-  --server-side-encryption-configuration \
-  '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
-
-aws dynamodb create-table \
-  --table-name terraform-state-lock \
-  --attribute-definitions AttributeName=LockID,AttributeType=S \
-  --key-schema AttributeName=LockID,KeyType=HASH \
-  --billing-mode PAY_PER_REQUEST \
-  --region us-east-1
-```
-
-## Switching Environments
-
-Always use `-reconfigure` when switching between environments:
-
-```bash
-cd environments/shared
-
-# → development
-terraform init -reconfigure -backend-config=../development/backend.hcl
-
-# → test
-terraform init -reconfigure -backend-config=../test/backend.hcl
-
-# → production
-terraform init -reconfigure -backend-config=../production/backend.hcl
-```
-
-## Modules
-
-### chat_lambda
-
-Deploys a Lambda function with an IAM execution role.
-
-| Input | Description |
-|-------|-------------|
-| `function_name` | Lambda function name |
-| `runtime` | Python runtime version |
-| `source_file` | Path to Lambda source code |
-| `dynamodb_table_arn` | DynamoDB table ARN (for IAM policy) |
-| `dynamodb_table_name` | DynamoDB table name (for env var) |
-| `bedrock_model_arn` | Bedrock model ARN (for IAM policy) |
-| `tags` | Resource tags |
-
-Outputs: `lambda_arn`, `lambda_function_name`, `lambda_role_arn`
-
-### dynamodb
-
-Deploys a DynamoDB table for chat history.
-
-| Input | Description |
-|-------|-------------|
-| `table_name` | Table name |
-| `billing_mode` | `PROVISIONED` or `PAY_PER_REQUEST` |
-| `read_capacity` | Read capacity units (if PROVISIONED) |
-| `write_capacity` | Write capacity units (if PROVISIONED) |
-| `tags` | Resource tags |
-
-Outputs: `table_arn`, `table_name`, `table_id`
-
-### api_gateway
-
-Deploys a REST API Gateway with Lambda integration.
-
-| Input | Description |
-|-------|-------------|
-| `api_name` | API name |
-| `lambda_function_arn` | Lambda ARN to integrate |
-| `lambda_function_name` | Lambda name (for invoke permission) |
-| `stage_name` | Deployment stage name |
-| `tags` | Resource tags |
-
-Outputs: `api_id`, `api_endpoint`, `api_execution_arn`
-
-## Troubleshooting
-
-### "Backend configuration changed"
-
-```bash
-terraform init -reconfigure -backend-config=../production/backend.hcl
-```
-
-### "Error acquiring the state lock"
-
-```bash
-# Force unlock only when certain no other process is running
-terraform force-unlock <lock-id>
-```
-
-### "No valid credential sources found"
-
-```bash
-aws configure
-# or set environment variables:
-export AWS_ACCESS_KEY_ID="..."
-export AWS_SECRET_ACCESS_KEY="..."
-export AWS_DEFAULT_REGION="us-east-1"
-```
-
-### "Backend bucket does not exist"
-
-See [Backend Setup](#backend-setup) above.
-
-### Plan shows unexpected changes
-
-```bash
-terraform refresh -var-file=../production/terraform.tfvars
-terraform plan -var-file=../production/terraform.tfvars
-```
-
-### Lambda function errors
-
-```bash
-# Check Lambda logs
-aws logs tail /aws/lambda/chatbot-production-chatbot --follow
-
-# Test Lambda invocation
-aws lambda invoke \
-  --function-name chatbot-production-chatbot \
-  --payload '{"message":"Hello"}' \
-  response.json
-```
-
-## Validation Commands
-
-```bash
-# Validate configuration syntax
-terraform validate
-
-# Check formatting
-terraform fmt -check
-
-# List all resources in state
-terraform state list
-
-# Show specific resource
-terraform state show 'module.chat_lambda.aws_lambda_function.this'
-```
-
-## Additional Documentation
-
-- [Deployment Instructions](docs/DEPLOYMENT.md) — full deployment guide with CI/CD examples
-- [Migration Guide](docs/MIGRATION.md) — migrating from the old per-environment structure
-- [Terraform Documentation](https://www.terraform.io/docs)
-- [AWS Provider Documentation](https://registry.terraform.io/providers/hashicorp/aws/latest/docs)
-
-## Changelog
-
-### v2.0.0 (current)
-- Refactored to DRY structure with `environments/shared/`
-- Eliminated duplicate configuration files across environments
-- Renamed `release` → `production`, `dev` → `development`
-- Implemented output-as-input pattern for module dependencies
-- Added comprehensive documentation
-
-### v1.0.0
-- Initial multi-environment structure with per-environment configuration files
+- This is a learning project, not a production service: there is no user authentication (the user ID is generated in the browser), and the guardrail uses the `DRAFT` version.
+- The Bedrock models and S3 Vectors must be available in the chosen region.
+- Remember to `terraform destroy` the environments you don't use: Bedrock, CloudFront and the Knowledge Base have running costs.
